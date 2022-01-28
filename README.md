@@ -1,17 +1,24 @@
 # Easy JWT
 
-Simple lighetweit JWT authorization module for nginx **[Nginx](https://nignx.org/)** web server
+Simple lightweight JWT authorization module for nginx **[Nginx](https://nignx.org/)** web server
 
 ## Lightweight 
 Does not use JWT and JSON libraries. Does not validate JSON integrity.
-Parse JWT from Authorization or Cookie. 
+
+Parses JWT from Authorization or Cookie.
+
 Supports WWW-Authentication request.
 
 ## Features
 Receives JWT in `Authorization: Bearer` or `Cookie` HTTP request field (configurable)
+
 Decodes JWT, checks expiration (`exp` claim field), checks signature, check "authorization for a resource" by comparing payload (claim) field value with the complex variable string.
+
 Responds with realm and error descriptions in WWW-Authenticate field
+
 Supports second key for signature validation. Useful for key renewal at auth server.
+
+
 ## Logging
 Register two nginx variables. 
 `ejwt_claim` - keeps value of the payload field configured for logging 
@@ -23,6 +30,60 @@ Different behaviour depending on configuration
 - JWT parse, expiration check, signature check
 - JWT parse, expiration check, signature check, authoriation check
 
+
+# Try
+## Configuration example
+
+    http {
+        # this sets cookie name to look token in
+        easy_jwt_cookie auth;
+        # this sets realm for WWW-Authenticate response
+        easy_jwt_realm  "Highly restricted area";
+
+        access_log  ejwt_fmt  '$uri   $ejwt_auth  $ejwt_claim';
+
+    	server {
+            listen 8080;
+            
+            access_log  logs/ejwt.log  ejwt_fmt;
+
+            # this location will only check expiration and dump whole payload to the log by variable ejwt_claim
+            location /ejwt_log {
+                empty_gif;
+                easy_jwt    on;
+                easy_jwt_claim '*';
+            }
+            
+            # this location will check token expiration and validate signature 
+            location /ejwt_check {
+                empty_gif;
+                easy_jwt    on;
+                # this sets 'Secret' as the key for HS256 signature validation
+                easy_jwt_key    HS256   'Secret';
+            }
+
+            # this location will check token expiration, validate signature and authorize uri
+            location /ejwt_auth {
+                empty_gif;
+                easy_jwt    on;
+                # this sets 'Secret' as the key for HS256 signature validation
+                easy_jwt_key    HS256   'Secret';
+                # this sets authorization procedure for the location
+                easy_jwt_auth   sub  '/ejwt_auth';
+            }
+
+            # this location will check token expiration, validate signature and authorize uri
+            location /private/folders {
+                empty_gif;
+                easy_jwt    on;
+                # this sets 'Secret' as the key for HS256 signature validation
+                easy_jwt_key    HS256   'Secret';
+                # this sets authorization procedure for the subfolders locations
+                # set the sub to '/private/folders/max' and this will give access to 'max' only
+                easy_jwt_auth   sub  '$uri';
+            }
+       }
+	}
 
 # Build
 
@@ -93,59 +154,6 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
     if the `name` is `*`, full claim is set as `ejwt_claim` variable value
 
 
-# Try
-## Configuration example
-
-    http {
-        # this sets cookie name to look token in
-        easy_jwt_cookie auth;
-        # this sets realm for WWW-Authenticate response
-        easy_jwt_realm  "Highly restricted area";
-
-        access_log  ejwt_fmt  '$uri   $ejwt_auth  $ejwt_claim';
-
-    	server {
-            listen 8080;
-            
-            access_log  logs/ejwt.log  ejwt_fmt;
-
-            # this location will only check expiration and dump whole payload to the log by variable ejwt_claim
-    		location /ejwt_log {
-                empty_gif;
-                easy_jwt    on;
-                easy_jwt_claim '*';
-    		}
-            
-            # this location will check token expiration and validate signature 
-    		location /ejwt_check {
-                empty_gif;
-                easy_jwt    on;
-                # this sets 'Secret' as the key for HS256 signature validation
-                easy_jwt_key    HS256   'Secret';
-    		}
-
-            # this location will check token expiration, validate signature and authorize uri
-    		location /ejwt_auth {
-                empty_gif;
-                easy_jwt    on;
-                # this sets 'Secret' as the key for HS256 signature validation
-                easy_jwt_key    HS256   'Secret';
-                # this sets authorization procedure for the location
-                easy_jwt_auth   sub  '/ejwt_auth';
-    		}
-
-            # this location will check token expiration, validate signature and authorize uri
-    		location /private/folders {
-                empty_gif;
-                easy_jwt    on;
-                # this sets 'Secret' as the key for HS256 signature validation
-                easy_jwt_key    HS256   'Secret';
-                # this sets authorization procedure for the subfolders locations
-                # set the sub to '/private/folders/max' and this will give access to 'max' only
-                easy_jwt_auth   sub  '$uri';
-    		}
-
-    	}
 
 ## Author
 Max Amzarakov `maxam18 at Google`
