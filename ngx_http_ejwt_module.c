@@ -17,10 +17,29 @@
 
 #define NGX_HTTP_EJWT_MD_LEN            256/8 /* HS256 only */
 
-#define dd(...) fprintf( stderr, "JWT " __VA_ARGS__)
+#define NGX_HTTP_EJWT_MODE_OFF          0x0000
+#define NGX_HTTP_EJWT_MODE_PRASE        0x1000 
+#define NGX_HTTP_EJWT_MODE_AUTH_HS256   0x0001
+#define NGX_HTTP_EJWT_MODE_AUTH_HS384   0x0002
+#define NGX_HTTP_EJWT_MODE_AUTH_HS512   0x0004
+#define NGX_HTTP_EJWT_MODE_AUTH_HMAC    (0x01|0x02|0x04)
+#define NGX_HTTP_EJWT_MODE_AUTH_RS256   0x0010
+#define NGX_HTTP_EJWT_MODE_AUTH_PS256   0x0020
+#define NGX_HTTP_EJWT_MODE_AUTH_PS384   0x0040
+#define NGX_HTTP_EJWT_MODE_AUTH_PS512   0x0080
+#define NGX_HTTP_EJWT_MODE_AUTH_RSA     (0x00F0)
+#define NGX_HTTP_EJWT_MODE_AUTH_ES256   0x0100
+#define NGX_HTTP_EJWT_MODE_AUTH_ES384   0x0200
+#define NGX_HTTP_EJWT_MODE_AUTH_ES512   0x0400
+#define NGX_HTTP_EJWT_MODE_AUTH_EC      (0x0F00)
+#define NGX_HTTP_EJWT_MODE_AUTH_PUB     (0x0FF0)
+#define NGX_HTTP_EJWT_MODE_AUTH_ALL     (0x0FFF)
+
+
 /*
-#define dd(...)
+#define dd(...) fprintf( stderr, "JWT " __VA_ARGS__)
 */
+#define dd(...)
 
 /* Description
  Parameter tns_var on/off
@@ -29,21 +48,26 @@
 
 typedef struct {
     ngx_str_t                   token;
+    ngx_str_t                   header;
     ngx_str_t                   payload;
     ngx_str_t                   signature;
     ngx_str_t                   var;
     ngx_str_t                   auth;
     ngx_uint_t                  exp;
+    ngx_uint_t                  hash_code;
+    ngx_uint_t                  alg;
 } ngx_http_ejwt_ctx_t;
 
 typedef struct {
-    ngx_flag_t                  enable;
+    ngx_flag_t                  mode;
     ngx_str_t                   cookie;
     ngx_str_t                   claim;
     ngx_str_t                   var;
     ngx_str_t                   realm;
     HMAC_CTX                   *hmac_ctx;
     HMAC_CTX                   *hmac_ctx_old;
+    RSA                        *rsa;
+    RSA                        *rsa_old;
     ngx_http_complex_value_t   *auth;
 } ngx_http_ejwt_conf_t;
 
@@ -54,11 +78,8 @@ typedef enum {
     NGX_HTTP_EJWT_ERR_FORBIDDEN 
 } ngx_http_ejwt_err_t;
 
-ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r);
 
-static ngx_str_t ngx_http_ejwt_var_claim_str = ngx_string("ejwt_claim");
-static ngx_str_t ngx_http_ejwt_var_auth_str = ngx_string("ejwt_auth");
-//static ngx_str_t ngx_http_ejwt_def_desc = ngx_string("Invalid credentials");
+ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r);
 
 static ngx_int_t ngx_http_ejwt_init(ngx_conf_t *cf);
 
@@ -73,6 +94,10 @@ static char *ngx_http_ejwt_conf_merge(ngx_conf_t *cf
         , void *parent, void *child);
 static char *ngx_http_ejwt_conf_set_key(ngx_conf_t *cf, ngx_command_t *cmd
         , void *conf);
+static void *ngx_http_ejwt_conf_set_hmac_key(ngx_conf_t *cf
+        , ngx_http_ejwt_conf_t *lcf, ngx_str_t *var, int alg);
+static void *ngx_http_ejwt_conf_set_pub_key(ngx_conf_t *cf
+        , ngx_http_ejwt_conf_t *lcf, ngx_str_t *var, int alg);
 static char *ngx_http_ejwt_conf_set_auth(ngx_conf_t *cf, ngx_command_t *cmd
         , void *conf);
 
@@ -83,16 +108,35 @@ static ngx_int_t ngx_http_ejwt_split_token(ngx_pool_t *pool
         , ngx_http_ejwt_ctx_t *ctx);
 static ngx_int_t ngx_http_ejwt_parse_payload(ngx_http_ejwt_conf_t *conf
         , ngx_http_ejwt_ctx_t *ctx);
-static ngx_int_t ngx_http_ejwt_check_sign(HMAC_CTX *main_ctx
+static ngx_int_t ngx_http_ejwt_parse_header(ngx_http_ejwt_conf_t *conf
         , ngx_http_ejwt_ctx_t *ctx);
+static ngx_int_t ngx_http_ejwt_check_hmac(HMAC_CTX *main_ctx
+        , ngx_http_ejwt_ctx_t *ctx);
+static ngx_int_t ngx_http_ejwt_check_rsa(RSA *rsa
+        , ngx_http_ejwt_ctx_t *ctx);
+
+static ngx_str_t ngx_http_ejwt_var_claim_str = ngx_string("ejwt_claim");
+static ngx_str_t ngx_http_ejwt_var_auth_str = ngx_string("ejwt_auth");
+//static ngx_str_t ngx_http_ejwt_def_desc = ngx_string("Invalid credentials");
+static ngx_conf_enum_t  ngx_http_ejwt_mode_set[] = {
+    { ngx_string("off"),     NGX_HTTP_EJWT_MODE_OFF },
+    { ngx_string("parse"),   NGX_HTTP_EJWT_MODE_PRASE },
+    { ngx_string("hs256"),   NGX_HTTP_EJWT_MODE_AUTH_HS256 },
+    { ngx_string("rs256"),   NGX_HTTP_EJWT_MODE_AUTH_RS256 },
+    { ngx_string("hmac"),    NGX_HTTP_EJWT_MODE_AUTH_HMAC },
+    { ngx_string("pub"),     NGX_HTTP_EJWT_MODE_AUTH_PUB },
+    { ngx_string("all"),     NGX_HTTP_EJWT_MODE_AUTH_ALL },
+    { ngx_null_string, 0 }
+};
+
 
 static ngx_command_t ngx_http_ejwt_commands[] = {
     {   ngx_string("easy_jwt"),
         NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
-        ngx_conf_set_flag_slot,
+        ngx_conf_set_enum_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_ejwt_conf_t, enable),
-        NULL },
+        offsetof(ngx_http_ejwt_conf_t, mode),
+        ngx_http_ejwt_mode_set },
     { ngx_string("easy_jwt_realm"),
         NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
         ngx_conf_set_str_slot,
@@ -127,6 +171,7 @@ static ngx_command_t ngx_http_ejwt_commands[] = {
     ngx_null_command
 };
 
+
 static ngx_http_module_t ngx_http_ejwt_ctx = {
     ngx_http_ejwt_add_variables,            /* preconfiguration */
     ngx_http_ejwt_init,                     /* postconfiguration */
@@ -137,6 +182,7 @@ static ngx_http_module_t ngx_http_ejwt_ctx = {
     ngx_http_ejwt_conf_create,              /* create location configration */
     ngx_http_ejwt_conf_merge                /* merge location configration */
 };
+
 
 ngx_module_t ngx_http_ejwt_module = {
     NGX_MODULE_V1,
@@ -159,16 +205,14 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
     ngx_http_ejwt_conf_t        *lcf;
     ngx_http_ejwt_ctx_t         *ctx;
     ngx_str_t                    token, str;
-
-    /* Pass OPTIONS request in */
-    if (r->method == NGX_HTTP_OPTIONS)
-	{
-		return NGX_DECLINED;
-	}
+    int                          err;
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_ejwt_module);
-    if( !lcf->enable )
+    if( lcf->mode == NGX_HTTP_EJWT_MODE_OFF 
+            || r->method == NGX_HTTP_OPTIONS )
         return NGX_DECLINED;
+
+    dd("mode 0x%04X", (unsigned)lcf->mode);
 
     if( r->headers_in.authorization != NULL )
     {
@@ -199,49 +243,79 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
     if( ctx == NULL )
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
+
     ctx->token = token;
     if( ngx_http_ejwt_split_token(r->pool, ctx) != NGX_OK ) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0
                 , "Cannot decode token");
         return NGX_HTTP_BAD_REQUEST;
     }
-dd("Token decoded.\n  token: '%.*s'\n  payload: '%.*s'\n, signlen %zu\n"
+
+    dd("Token decoded.\n"
+        "  token:   '%.*s'\n"
+        "  header:  '%.*s'\n"
+        "  payload: '%.*s'\n"
+        "  signlen   %zu\n"
+        "  expired   %lu\n"
         , (int)ctx->token.len, ctx->token.data
+        , (int)ctx->header.len, ctx->header.data
         , (int)ctx->payload.len, ctx->payload.data
-        , ctx->signature.len);
+        , ctx->signature.len, ctx->exp);
 
     if( ngx_http_ejwt_parse_payload(lcf, ctx) != NGX_OK ) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0
+        ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0
                 , "Cannot parse token payload");
         return NGX_HTTP_BAD_REQUEST;
     }
 
     ngx_http_set_ctx(r, ctx, ngx_http_ejwt_module);
 
-    if( !ctx->exp || (time_t)ctx->exp < ngx_time() )
+    if( lcf->mode == NGX_HTTP_EJWT_MODE_PRASE )
+        return NGX_OK;
+
+    if( ctx->exp && (time_t)ctx->exp < ngx_time() )
         return ngx_http_ejwt_auth_reply(r, &lcf->realm
                 , NGX_HTTP_EJWT_ERR_EXPIRED);
-
-    if( lcf->hmac_ctx != NGX_CONF_UNSET_PTR )
-    {
-        if( !ctx->signature.len ) {
-            return ngx_http_ejwt_auth_reply(r, &lcf->realm
-                    , NGX_HTTP_EJWT_ERR_INVALID);
-        }
-
-        if( ngx_http_ejwt_check_sign(lcf->hmac_ctx, ctx) != NGX_OK )
-        {
-            if( lcf->hmac_ctx_old != NGX_CONF_UNSET_PTR ) {
-                if( ngx_http_ejwt_check_sign(lcf->hmac_ctx, ctx) != NGX_OK ) {
-                    return ngx_http_ejwt_auth_reply(r, &lcf->realm
-                        , NGX_HTTP_EJWT_ERR_INVALID);;
-                }
-            } else {
-                return ngx_http_ejwt_auth_reply(r, &lcf->realm
-                    , NGX_HTTP_EJWT_ERR_INVALID);;
-            } 
-        }
+    
+    if( !ctx->signature.len ) {
+        return ngx_http_ejwt_auth_reply(r, &lcf->realm
+                , NGX_HTTP_EJWT_ERR_INVALID);
     }
+
+    if( lcf->mode == NGX_HTTP_EJWT_MODE_AUTH_ALL 
+            && (lcf->hmac_ctx && lcf->rsa) )
+    {
+        if( ngx_http_ejwt_parse_header(lcf, ctx) != NGX_OK ) {
+            ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0
+                    , "Cannot parse alg from token '%V'", ctx->token);
+            return NGX_HTTP_BAD_REQUEST;
+        }
+    } else 
+        ctx->alg = lcf->mode;
+
+    dd("JWT alg: 0x%04X\n", (unsigned)ctx->alg);
+    if( ctx->alg & NGX_HTTP_EJWT_MODE_AUTH_HMAC )
+    {
+        err = ngx_http_ejwt_check_hmac(lcf->hmac_ctx, ctx);
+        if( err != NGX_OK && lcf->hmac_ctx_old != NGX_CONF_UNSET_PTR )
+        {
+            err = ngx_http_ejwt_check_hmac(lcf->hmac_ctx_old, ctx);
+        }
+
+    } else if( ctx->alg & NGX_HTTP_EJWT_MODE_AUTH_PUB )
+    {
+        err = ngx_http_ejwt_check_rsa(lcf->rsa, ctx);
+        if( err != NGX_OK && lcf->rsa_old != NGX_CONF_UNSET_PTR )
+        {
+            err = ngx_http_ejwt_check_rsa(lcf->rsa_old, ctx);
+        }
+        dd("CHECK RSA returns %d\n", err);
+    } else
+        err = NGX_ERROR;
+    
+    if( err != NGX_OK )
+        return ngx_http_ejwt_auth_reply(r, &lcf->realm
+                , NGX_HTTP_EJWT_ERR_INVALID);
 
     if( lcf->auth != NGX_CONF_UNSET_PTR )
     {
@@ -264,7 +338,8 @@ static ngx_int_t
 ngx_http_ejwt_split_token(ngx_pool_t *pool, ngx_http_ejwt_ctx_t *ctx)
 {
     size_t       len;
-    u_char      *p, i, *buf;
+    int          i;
+    u_char      *p, *buf;
     ngx_str_t    partd[3], part[3];
 
     part[0] = ctx->token;
@@ -283,11 +358,11 @@ ngx_http_ejwt_split_token(ngx_pool_t *pool, ngx_http_ejwt_ctx_t *ctx)
         }
     part[i].len = p - part[i].data;
 
-    buf = ngx_palloc(pool, ctx->token.len - part[0].len);
+    buf = ngx_palloc(pool, ctx->token.len);
     if( !buf )
         return NGX_ERROR;
     
-    while( i > 0 )
+    while( i >= 0 )
     {
         partd[i].data = buf;
 
@@ -297,8 +372,9 @@ ngx_http_ejwt_split_token(ngx_pool_t *pool, ngx_http_ejwt_ctx_t *ctx)
         buf += partd[i--].len;
     }
 
-    ctx->payload    = partd[1];
-    ctx->signature  = partd[2];
+    ctx->header    = partd[0];
+    ctx->payload   = partd[1];
+    ctx->signature = partd[2];
 
     if( part[2].len ) {
         ctx->token.len -= part[2].len + 1;
@@ -410,7 +486,83 @@ ngx_http_ejwt_parse_payload(ngx_http_ejwt_conf_t *conf, ngx_http_ejwt_ctx_t *ctx
 
 
 static ngx_int_t
-ngx_http_ejwt_check_sign(HMAC_CTX *main_ctx, ngx_http_ejwt_ctx_t *ctx)
+ngx_http_ejwt_parse_header(ngx_http_ejwt_conf_t *conf, ngx_http_ejwt_ctx_t *ctx)
+{
+    u_char     *p, *e, *v, *k, ch;
+    u_int32_t   vlen, klen;
+    static enum { LS_BEGIN, LS_LVL, LS_VAL, LS_KEYST, LS_KEY } lstate;
+
+    lstate = LS_BEGIN;
+
+    vlen = klen = 0;
+    v = e = k = 0;
+
+    ctx->alg = NGX_HTTP_EJWT_MODE_OFF;
+
+    p = ctx->header.data + ctx->header.len;
+    while( p > ctx->header.data )  
+    {
+        ch = *p--;
+        switch( lstate )
+        {
+            case LS_BEGIN:
+                if( ch == '}' )
+                    lstate = LS_LVL;
+            break;
+            case LS_LVL:
+                if( ch == '"' ) {
+                    lstate = LS_VAL;
+                    e = p;
+                }
+            break;
+            case LS_VAL:
+                if( ch == '"' && *p != '\\' ) {
+                    v      = p + 2;
+                    vlen   = e - p - 1;
+                    lstate = LS_KEYST;
+                }
+            break;
+            case LS_KEYST:
+                if( ch == '"' ) {
+                    e = p;
+                    lstate = LS_KEY;
+                }
+            break;
+            case LS_KEY:
+                if( ch == '"' && *p != '\\' ) {
+                    lstate = LS_LVL;
+                    klen   = e - p - 1;
+
+                    if( klen != 3 && vlen != 5 )
+                        break;
+
+                    k = p + 2;
+                    if( k[0] == 'a' && k[1] == 'l' && k[2] == 'g' )
+                    {
+                        if( (v[1] == 's' || v[1] == 'S') 
+                                && v[2] == '2' && v[3] == '5' && v[4] == '6' )
+                        {
+                            if( *v == 'h' || *v == 'H' )
+                                ctx->alg = NGX_HTTP_EJWT_MODE_AUTH_HS256;
+                            else if( *v == 'r' || *v == 'R' )
+                                ctx->alg = NGX_HTTP_EJWT_MODE_AUTH_RS256;
+                        }
+                        p = ctx->header.data;
+                    }
+                }
+            break;
+        }
+    }
+
+    if( lstate != LS_LVL ) 
+        return NGX_ERROR;
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_http_ejwt_check_hmac(HMAC_CTX *main_ctx, ngx_http_ejwt_ctx_t *ctx)
 {
     HMAC_CTX    *hs_ctx;
     u_char       md[NGX_HTTP_EJWT_MD_LEN];
@@ -440,6 +592,21 @@ ngx_http_ejwt_check_sign(HMAC_CTX *main_ctx, ngx_http_ejwt_ctx_t *ctx)
 hmac_fail:
     HMAC_CTX_free(hs_ctx);
     return NGX_ERROR;
+}
+
+
+static ngx_int_t
+ngx_http_ejwt_check_rsa(RSA *rsa, ngx_http_ejwt_ctx_t *ctx)
+{
+    int          err;
+    u_char       hash[256/8 + 1];
+
+    SHA256(ctx->token.data, ctx->token.len, hash);
+
+    err = RSA_verify(NID_sha256, hash, 32
+            , ctx->signature.data, ctx->signature.len, rsa);
+
+    return err == 1 ? NGX_OK : NGX_ERROR;
 }
 
 
@@ -610,40 +777,95 @@ ngx_http_ejwt_init(ngx_conf_t *cf)
 static char *
 ngx_http_ejwt_conf_set_key(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_str_t                          *var;
+    ngx_str_t                          *values;
     ngx_http_ejwt_conf_t               *lcf;
-    const EVP_MD                       *evp_md;
 
-    var = cf->args->elts;
-    lcf = conf;
+    values = cf->args->elts;
+    lcf    = conf;
 
-    var++;
+    if( values[1].len != 5 )
+        return "Invalid signature algorithm name";
 
-    if( (var->len == (sizeof("HS256")-1)) 
-        && (ngx_strncasecmp(var->data, (u_char *)"HS256"
-                , sizeof("HS256")-1) 
-            == 0) )
-        evp_md = EVP_sha256();
-    else
-        return "Only HS256 supported";
-    
-
-    if( !(lcf->hmac_ctx = HMAC_CTX_new()) )
-        return NGX_CONF_ERROR;
-
-    var++;
-    if( HMAC_Init(lcf->hmac_ctx, var->data, var->len, evp_md) == 0 )
-        return NGX_CONF_ERROR;
-    
-    if( cf->args->nelts > 3 )
+    if( ngx_strncasecmp(values[1].data, (u_char *)"hs256", 5) == 0 )
     {
-        lcf->hmac_ctx_old  = HMAC_CTX_new();
-        var++;
-        if( HMAC_Init(lcf->hmac_ctx_old, var->data, var->len, evp_md) == 0 )
-        return NGX_CONF_ERROR;
-    }
+        if( !(lcf->hmac_ctx = 
+                    ngx_http_ejwt_conf_set_hmac_key(cf, lcf, &values[2]
+                            , NGX_HTTP_EJWT_MODE_AUTH_HS256))  ) {
+            return "Invalid key";
+        }
+
+        if( cf->args->nelts > 3 )
+        {
+            if( !(lcf->hmac_ctx_old = 
+                        ngx_http_ejwt_conf_set_hmac_key(cf, lcf, &values[3]
+                                , NGX_HTTP_EJWT_MODE_AUTH_HS256)) ) {
+                return "Invalid old key";
+            }
+        }
+    } else if( ngx_strncasecmp(values[1].data, (u_char *)"rs256", 5) == 0 )
+    {
+        if( !(lcf->rsa = 
+                ngx_http_ejwt_conf_set_pub_key(cf, lcf, &values[2]
+                        , NGX_HTTP_EJWT_MODE_AUTH_RS256)) ) {
+            return "Invalid key";
+        }
+
+        if( cf->args->nelts > 3 )
+        {
+            if( !(lcf->rsa_old = 
+                        ngx_http_ejwt_conf_set_pub_key(cf, lcf, &values[3]
+                                , NGX_HTTP_EJWT_MODE_AUTH_RS256)) ) {
+                return "Invalid old key";
+            }
+        }
+    } else
+        return "HS256 and RS256 only supported";
 
     return NGX_CONF_OK;
+}
+
+
+static void *
+ngx_http_ejwt_conf_set_hmac_key(ngx_conf_t *cf, ngx_http_ejwt_conf_t *lcf, ngx_str_t *var, int alg)
+{
+    HMAC_CTX        *hmac_ctx;
+    const EVP_MD    *evp_md;
+
+    evp_md = EVP_sha256();
+
+    if( !(hmac_ctx = HMAC_CTX_new()) )
+        return NULL;
+
+    if( HMAC_Init(lcf->hmac_ctx, var->data, var->len, evp_md) == 0 )
+        return NULL;
+
+    return hmac_ctx;
+}
+
+static void *
+ngx_http_ejwt_conf_set_pub_key(ngx_conf_t *cf, ngx_http_ejwt_conf_t *lcf, ngx_str_t *var, int alg)
+{
+    RSA    *rsa;
+    FILE   *fp;
+
+    rsa = RSA_new();
+    if( !rsa )
+        return NULL;
+
+    if( ngx_conf_full_name(cf->cycle, var, 1) != NGX_OK )
+        return NULL;
+
+    fp = fopen((char *)var->data, "r");
+    if( !fp ) {
+        perror((char *)var->data);
+        return NULL;
+    }
+
+    rsa = PEM_read_RSA_PUBKEY(fp, &rsa, NULL, NULL);
+
+    fclose(fp);
+
+    return rsa;
 }
 
 
@@ -682,7 +904,7 @@ ngx_http_ejwt_conf_merge(ngx_conf_t *cf, void *parent, void *child)
     ngx_http_ejwt_conf_t *prev = parent;
     ngx_http_ejwt_conf_t *conf = child;
 
-    ngx_conf_merge_value(conf->enable, prev->enable, 0);
+    ngx_conf_merge_value(conf->mode, prev->mode, NGX_HTTP_EJWT_MODE_OFF);
     ngx_conf_merge_str_value(conf->cookie, prev->cookie, "");
     ngx_conf_merge_str_value(conf->claim, prev->claim, "");
     ngx_conf_merge_str_value(conf->var, prev->var, "");
@@ -693,6 +915,18 @@ ngx_http_ejwt_conf_merge(ngx_conf_t *cf, void *parent, void *child)
             , NGX_CONF_UNSET_PTR);
     ngx_conf_merge_ptr_value(conf->hmac_ctx_old, prev->hmac_ctx_old
             , NGX_CONF_UNSET_PTR);
+    ngx_conf_merge_ptr_value(conf->rsa, prev->rsa
+            , NGX_CONF_UNSET_PTR);
+    ngx_conf_merge_ptr_value(conf->rsa_old, prev->rsa_old
+            , NGX_CONF_UNSET_PTR);
+
+    if( conf->mode == NGX_HTTP_EJWT_MODE_AUTH_HMAC 
+            && conf->hmac_ctx == NGX_CONF_UNSET_PTR )
+        return "Hash code is not set";
+
+    if( conf->mode == NGX_HTTP_EJWT_MODE_AUTH_PUB 
+            && conf->rsa == NGX_CONF_UNSET_PTR )
+        return "RSA public key is not set";
         
     return NGX_CONF_OK;
 }/*}}}*/
@@ -705,10 +939,12 @@ static void *ngx_http_ejwt_conf_create(ngx_conf_t *cf)
     if( (conf = ngx_pcalloc(cf->pool, sizeof(*conf))) == NULL )
         return NGX_CONF_ERROR;
 
-    conf->enable        = NGX_CONF_UNSET;
+    conf->mode          = NGX_CONF_UNSET;
     conf->auth          = NGX_CONF_UNSET_PTR;
     conf->hmac_ctx      = NGX_CONF_UNSET_PTR;
     conf->hmac_ctx_old  = NGX_CONF_UNSET_PTR;
+    conf->rsa           = NGX_CONF_UNSET_PTR;
+    conf->rsa_old       = NGX_CONF_UNSET_PTR;
 
     return conf;
 }

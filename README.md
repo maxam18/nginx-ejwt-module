@@ -102,12 +102,18 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
 
 **Nginx** configuration directives below. 
 
-## easy_jwt - on/off switch
-**Syntax**: `easy_jwt  on/off`
+## easy_jwt - module operation mode
+**Syntax**: `easy_jwt  [off|parse|hs256|rs256|hmac|pub|all`
 **Default**: `off`
 **Context**: location
 
     Turns on module functionality.
+    parse - only parses JWT
+    hs256 - check JWT only HS256 signature if found in JWT
+    rs256 - check JWT only RS256 signature if found in JWT
+    hmac  - check JWT HMAC only signature if found in JWT (based on 'alg' from JWT header)
+    pub   - check JWT priv/pub key signature if found in JWT (based on 'alg' from JWT header)
+    all   - check JWT with any supported algorithms (based on 'alg' from JWT header)
 
 ## easy_jwt_cookie 
 **Syntax**: `easy_jwt_cookie  name`
@@ -129,11 +135,9 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
 **Default**: `NULL`
 **Context**: `main`,`server`,`location`
 
-    `ALGO` is the signature algorithm. Only HS256 supported today
-    `KEY1` first key to check signature with 
-    `KEY2` seconds key to check signature with if the check with `KEY1` fails
-    
-    Easy JWT doesn't make signature validation is the key is not set.
+    `ALGO` is the signature algorithm. HS256, RS256 supported.
+    `KEY1` first key to check signature with. Or file path to public PEM-encoded RSA key 
+    `KEY2` seconds key to check signature if the check on `KEY1` fails. or file path to public PEM-encoded RSA key
 
 ## easy_jwt_auth
 **Syntax**: `easy_jwt_auth  name  value`
