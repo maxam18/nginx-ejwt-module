@@ -212,8 +212,6 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
             || r->method == NGX_HTTP_OPTIONS )
         return NGX_DECLINED;
 
-    dd("mode 0x%04X", (unsigned)lcf->mode);
-
     if( r->headers_in.authorization != NULL )
     {
         token = r->headers_in.authorization->value;
@@ -293,7 +291,6 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
     } else 
         ctx->alg = lcf->mode;
 
-    dd("JWT alg: 0x%04X\n", (unsigned)ctx->alg);
     if( ctx->alg & NGX_HTTP_EJWT_MODE_AUTH_HMAC )
     {
         err = ngx_http_ejwt_check_hmac(lcf->hmac_ctx, ctx);
@@ -309,7 +306,6 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
         {
             err = ngx_http_ejwt_check_rsa(lcf->rsa_old, ctx);
         }
-        dd("CHECK RSA returns %d\n", err);
     } else
         err = NGX_ERROR;
     
@@ -617,7 +613,7 @@ ngx_http_ejwt_auth_reply(ngx_http_request_t *r, ngx_str_t *realm, ngx_http_ejwt_
     u_char             *val, *p;
     static ngx_str_t    errors[] = {
         ngx_string(""),
-        ngx_string("invalid token"),
+        ngx_string("invalid signature"),
         ngx_string("token expired"),
         ngx_string("access forbidden")
     };
@@ -628,7 +624,7 @@ ngx_http_ejwt_auth_reply(ngx_http_request_t *r, ngx_str_t *realm, ngx_http_ejwt_
     }
 
     len = sizeof("Bearer") - 1;
-    
+
     if( realm->len ) {
         len += sizeof(" realm=\"\"") - 1 + realm->len;
     }
@@ -644,29 +640,28 @@ ngx_http_ejwt_auth_reply(ngx_http_request_t *r, ngx_str_t *realm, ngx_http_ejwt_
     if( val == NULL ) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
-
     p = ngx_cpymem(val, "Bearer", sizeof("Bearer") - 1);
 
     if( realm->len ) {
-        p = ngx_cpymem(p, " realm=\"", sizeof(" realm=\"") - 1);
-        p = ngx_cpymem(p, realm->data, realm->len);
-        *p = '"';
+        p  = ngx_cpymem(p, " realm=\"", sizeof(" realm=\"") - 1);
+        p  = ngx_cpymem(p, realm->data, realm->len);
     }
 
     if( err ) {
         if( realm->len ) {
-            *++p = ',';
+            *p++ = '"';
+            *p++ = ',';
         }
-        p  = ngx_cpymem(++p, " error=\"invalid_token\", error_description=\""
-                , sizeof(" error=\"invalid_token\", error_description=\"") - 1);
-        p  = ngx_cpymem(p, errors[err].data, errors[err].len);
-        *p = '"';
+        p = ngx_cpymem(p, " error=\"invalid_token\", error_description=\"", 
+                sizeof(" error=\"invalid_token\", error_description=\"") - 1);
+        p = ngx_cpymem(p, errors[err].data, errors[err].len);
     }
+    *p = '"';
 
     r->headers_out.www_authenticate->hash = 1;
     ngx_str_set(&r->headers_out.www_authenticate->key, "WWW-Authenticate");
     r->headers_out.www_authenticate->value.data = val;
-    r->headers_out.www_authenticate->value.len = len;
+    r->headers_out.www_authenticate->value.len  = len;
 
     return NGX_HTTP_UNAUTHORIZED;
 }
@@ -836,7 +831,7 @@ ngx_http_ejwt_conf_set_hmac_key(ngx_conf_t *cf, ngx_http_ejwt_conf_t *lcf, ngx_s
     if( !(hmac_ctx = HMAC_CTX_new()) )
         return NULL;
 
-    if( HMAC_Init(lcf->hmac_ctx, var->data, var->len, evp_md) == 0 )
+    if( HMAC_Init(hmac_ctx, var->data, var->len, evp_md) == 0 )
         return NULL;
 
     return hmac_ctx;
@@ -920,11 +915,11 @@ ngx_http_ejwt_conf_merge(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_ptr_value(conf->rsa_old, prev->rsa_old
             , NGX_CONF_UNSET_PTR);
 
-    if( conf->mode == NGX_HTTP_EJWT_MODE_AUTH_HMAC 
+    if( conf->mode & NGX_HTTP_EJWT_MODE_AUTH_HMAC 
             && conf->hmac_ctx == NGX_CONF_UNSET_PTR )
         return "Hash code is not set";
 
-    if( conf->mode == NGX_HTTP_EJWT_MODE_AUTH_PUB 
+    if( conf->mode & NGX_HTTP_EJWT_MODE_AUTH_PUB 
             && conf->rsa == NGX_CONF_UNSET_PTR )
         return "RSA public key is not set";
         
