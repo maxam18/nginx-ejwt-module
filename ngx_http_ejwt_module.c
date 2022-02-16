@@ -244,7 +244,7 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
 
     ctx->token = token;
     if( ngx_http_ejwt_split_token(r->pool, ctx) != NGX_OK ) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0
+        ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0
                 , "Cannot decode token");
         return NGX_HTTP_BAD_REQUEST;
     }
