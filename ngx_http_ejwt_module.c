@@ -13,7 +13,7 @@
 #include <openssl/sha.h>
 #include <openssl/hmac.h>
 
-#define NGX_TNS_EJWT_VERSION            "0.0.1"
+#define NGX_TNS_EJWT_VERSION            "0.0.2"
 
 #define NGX_HTTP_EJWT_MD_LEN            256/8 /* HS256 only */
 
