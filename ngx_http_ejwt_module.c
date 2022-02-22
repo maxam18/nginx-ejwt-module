@@ -13,7 +13,7 @@
 #include <openssl/sha.h>
 #include <openssl/hmac.h>
 
-#define NGX_TNS_EJWT_VERSION            "0.0.2"
+#define NGX_TNS_EJWT_VERSION            "0.0.3"
 
 #define NGX_HTTP_EJWT_MD_LEN            256/8 /* HS256 only */
 
@@ -831,7 +831,7 @@ ngx_http_ejwt_conf_set_hmac_key(ngx_conf_t *cf, ngx_http_ejwt_conf_t *lcf, ngx_s
     if( !(hmac_ctx = HMAC_CTX_new()) )
         return NULL;
 
-    if( HMAC_Init(hmac_ctx, var->data, var->len, evp_md) == 0 )
+    if( HMAC_Init_ex(hmac_ctx, var->data, var->len, evp_md, 0) == 0 )
         return NULL;
 
     return hmac_ctx;
