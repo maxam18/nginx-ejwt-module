@@ -13,7 +13,7 @@
 #include <openssl/sha.h>
 #include <openssl/hmac.h>
 
-#define NGX_TNS_EJWT_VERSION            "0.0.3"
+#define NGX_TNS_EJWT_VERSION            "0.0.4"
 
 #define NGX_HTTP_EJWT_MD_LEN            256/8 /* HS256 only */
 
@@ -336,7 +336,7 @@ ngx_http_ejwt_split_token(ngx_pool_t *pool, ngx_http_ejwt_ctx_t *ctx)
     size_t       len;
     int          i;
     u_char      *p, *buf;
-    ngx_str_t    partd[3], part[3];
+    ngx_str_t    partd[3], part[3] = {{0,0}, {0,0}, {0,0}};
 
     part[0] = ctx->token;
 
