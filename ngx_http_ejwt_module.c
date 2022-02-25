@@ -618,6 +618,9 @@ ngx_http_ejwt_auth_reply(ngx_http_request_t *r, ngx_str_t *realm, ngx_http_ejwt_
         ngx_string("access forbidden")
     };
 
+    if( realm->len == NGX_CONF_UNSET_SIZE )
+        return NGX_HTTP_UNAUTHORIZED;
+
     r->headers_out.www_authenticate = ngx_list_push(&r->headers_out.headers);
     if( r->headers_out.www_authenticate == NULL ) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -903,7 +906,6 @@ ngx_http_ejwt_conf_merge(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_str_value(conf->cookie, prev->cookie, "");
     ngx_conf_merge_str_value(conf->claim, prev->claim, "");
     ngx_conf_merge_str_value(conf->var, prev->var, "");
-    ngx_conf_merge_str_value(conf->realm, prev->realm, "");
     ngx_conf_merge_ptr_value(conf->auth, prev->auth
             , NGX_CONF_UNSET_PTR);
     ngx_conf_merge_ptr_value(conf->hmac_ctx, prev->hmac_ctx
@@ -914,6 +916,14 @@ ngx_http_ejwt_conf_merge(ngx_conf_t *cf, void *parent, void *child)
             , NGX_CONF_UNSET_PTR);
     ngx_conf_merge_ptr_value(conf->rsa_old, prev->rsa_old
             , NGX_CONF_UNSET_PTR);
+
+    if( conf->realm.data == NULL )
+    {
+        if( prev->realm.data )
+            conf->realm = prev->realm;
+        else 
+            conf->realm.len = NGX_CONF_UNSET_SIZE;
+    }
 
     if( conf->mode & NGX_HTTP_EJWT_MODE_AUTH_HMAC 
             && conf->hmac_ctx == NGX_CONF_UNSET_PTR )
