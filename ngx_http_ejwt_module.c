@@ -18,7 +18,7 @@
 #define NGX_HTTP_EJWT_MD_LEN            256/8 /* HS256 only */
 
 #define NGX_HTTP_EJWT_MODE_OFF          0x0000
-#define NGX_HTTP_EJWT_MODE_PRASE        0x1000 
+#define NGX_HTTP_EJWT_MODE_PARSE        0x1000 
 #define NGX_HTTP_EJWT_MODE_AUTH_HS256   0x0001
 #define NGX_HTTP_EJWT_MODE_AUTH_HS384   0x0002
 #define NGX_HTTP_EJWT_MODE_AUTH_HS512   0x0004
@@ -120,7 +120,7 @@ static ngx_str_t ngx_http_ejwt_var_auth_str = ngx_string("ejwt_auth");
 //static ngx_str_t ngx_http_ejwt_def_desc = ngx_string("Invalid credentials");
 static ngx_conf_enum_t  ngx_http_ejwt_mode_set[] = {
     { ngx_string("off"),     NGX_HTTP_EJWT_MODE_OFF },
-    { ngx_string("parse"),   NGX_HTTP_EJWT_MODE_PRASE },
+    { ngx_string("parse"),   NGX_HTTP_EJWT_MODE_PARSE },
     { ngx_string("hs256"),   NGX_HTTP_EJWT_MODE_AUTH_HS256 },
     { ngx_string("rs256"),   NGX_HTTP_EJWT_MODE_AUTH_RS256 },
     { ngx_string("hmac"),    NGX_HTTP_EJWT_MODE_AUTH_HMAC },
@@ -268,7 +268,7 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
 
     ngx_http_set_ctx(r, ctx, ngx_http_ejwt_module);
 
-    if( lcf->mode == NGX_HTTP_EJWT_MODE_PRASE )
+    if( lcf->mode == NGX_HTTP_EJWT_MODE_PARSE )
         return NGX_OK;
 
     if( ctx->exp && (time_t)ctx->exp < ngx_time() )
