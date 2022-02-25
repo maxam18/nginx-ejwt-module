@@ -123,12 +123,12 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
     Cookie name for token lookup. Easy JWT looks for `Authorization: Bearer` value first, then look for a cookie if the `name` is set.
 
 ## easy_jwt_realm 
-**Syntax**: `easy_jwt_realm  realm_string`
+**Syntax**: `easy_jwt_realm  text`
 **Default**: `NULL`
 **Context**: `main`,`server`,`location`
 
-    Sets realm for `WWW-Authenticate` response
-    WWW-Authenticate: realm="`realm_string`"
+    Responds with WWW-Authenticate header field if value is set.
+    Module adds realm="text" if the text of non-zero length
 
 ## easy_jwt_key 
 **Syntax**: `easy_jwt_key  ALGO KEY1 [KEY2]`
