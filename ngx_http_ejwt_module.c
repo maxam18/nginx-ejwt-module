@@ -60,7 +60,7 @@ typedef struct {
 
 typedef struct {
     ngx_flag_t                  mode;
-    ngx_str_t                   cookie;
+    ngx_int_t                   vindex;
     ngx_str_t                   claim;
     ngx_str_t                   var;
     ngx_str_t                   realm;
@@ -92,6 +92,8 @@ static ngx_int_t ngx_http_ejwt_var_auth(ngx_http_request_t *r
 static void *ngx_http_ejwt_conf_create(ngx_conf_t *cf);
 static char *ngx_http_ejwt_conf_merge(ngx_conf_t *cf
         , void *parent, void *child);
+static char *ngx_http_ejwt_conf_set_mode(ngx_conf_t *cf, ngx_command_t *cmd
+        , void *conf);
 static char *ngx_http_ejwt_conf_set_key(ngx_conf_t *cf, ngx_command_t *cmd
         , void *conf);
 static void *ngx_http_ejwt_conf_set_hmac_key(ngx_conf_t *cf
@@ -117,7 +119,7 @@ static ngx_int_t ngx_http_ejwt_check_rsa(RSA *rsa
 
 static ngx_str_t ngx_http_ejwt_var_claim_str = ngx_string("ejwt_claim");
 static ngx_str_t ngx_http_ejwt_var_auth_str = ngx_string("ejwt_auth");
-//static ngx_str_t ngx_http_ejwt_def_desc = ngx_string("Invalid credentials");
+
 static ngx_conf_enum_t  ngx_http_ejwt_mode_set[] = {
     { ngx_string("off"),     NGX_HTTP_EJWT_MODE_OFF },
     { ngx_string("parse"),   NGX_HTTP_EJWT_MODE_PARSE },
@@ -132,8 +134,8 @@ static ngx_conf_enum_t  ngx_http_ejwt_mode_set[] = {
 
 static ngx_command_t ngx_http_ejwt_commands[] = {
     {   ngx_string("easy_jwt"),
-        NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
-        ngx_conf_set_enum_slot,
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE12,
+        ngx_http_ejwt_conf_set_mode,
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_ejwt_conf_t, mode),
         ngx_http_ejwt_mode_set },
@@ -142,12 +144,6 @@ static ngx_command_t ngx_http_ejwt_commands[] = {
         ngx_conf_set_str_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_ejwt_conf_t, realm),
-        NULL },
-    { ngx_string("easy_jwt_cookie"),
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-        ngx_conf_set_str_slot,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_ejwt_conf_t, cookie),
         NULL },
     { ngx_string("easy_jwt_key"),
         NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE23,
@@ -202,6 +198,7 @@ ngx_module_t ngx_http_ejwt_module = {
 
 ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
 {
+    ngx_http_variable_value_t   *value;
     ngx_http_ejwt_conf_t        *lcf;
     ngx_http_ejwt_ctx_t         *ctx;
     ngx_str_t                    token, str;
@@ -212,6 +209,7 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
             || r->method == NGX_HTTP_OPTIONS )
         return NGX_DECLINED;
 
+    token.len = 0;
     if( r->headers_in.authorization != NULL )
     {
         token = r->headers_in.authorization->value;
@@ -223,17 +221,19 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
             token.len  -= sizeof("Bearer ") - 1;
             token.data += sizeof("Bearer ") - 1;
         } else {
-            return ngx_http_ejwt_auth_reply(r, &lcf->realm, 0);
+            token.len = 0;
         }
-
-    } else if( lcf->cookie.len )
+    } else if( lcf->vindex != NGX_CONF_UNSET )
     {
-        if( ngx_http_parse_multi_header_lines(&r->headers_in.cookies
-                    , &lcf->cookie, &token) 
-            == NGX_DECLINED ) {
-            return ngx_http_ejwt_auth_reply(r, &lcf->realm, 0);
-        }
-    } else {
+        value =  ngx_http_get_indexed_variable(r, lcf->vindex);
+        if( value == NULL )
+            return NGX_ERROR;
+
+        token.data = value->data;
+        token.len  = value->len;
+    } 
+    
+    if( token.len == 0 ) {
         return ngx_http_ejwt_auth_reply(r, &lcf->realm, 0);
     }
 
@@ -241,6 +241,7 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
     if( ctx == NULL )
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
+    dd("Token: '%.*s'\n", (int)token.len, token.data);
 
     ctx->token = token;
     if( ngx_http_ejwt_split_token(r->pool, ctx) != NGX_OK ) {
@@ -336,11 +337,9 @@ ngx_http_ejwt_split_token(ngx_pool_t *pool, ngx_http_ejwt_ctx_t *ctx)
     size_t       len;
     int          i;
     u_char      *p, *buf;
-    ngx_str_t    partd[3], part[3] = {{0,0}, {0,0}, {0,0}};
+    ngx_str_t    part[3] = {{0,0}, {0,0}, {0,0}}, enc;
 
-    part[0] = ctx->token;
-
-    p   = ctx->token.data;
+    p   = part[0].data = ctx->token.data;
     len = ctx->token.len;
     i   = 0;
     while( len-- )
@@ -354,27 +353,28 @@ ngx_http_ejwt_split_token(ngx_pool_t *pool, ngx_http_ejwt_ctx_t *ctx)
         }
     part[i].len = p - part[i].data;
 
-    buf = ngx_palloc(pool, ctx->token.len);
-    if( !buf )
-        return NGX_ERROR;
-    
-    while( i >= 0 )
-    {
-        partd[i].data = buf;
-
-        if( ngx_decode_base64url(&partd[i], &part[i]) != NGX_OK )
-            return NGX_ERROR;
-
-        buf += partd[i--].len;
-    }
-
-    ctx->header    = partd[0];
-    ctx->payload   = partd[1];
-    ctx->signature = partd[2];
-
     if( part[2].len ) {
         ctx->token.len -= part[2].len + 1;
     }
+
+    buf = ngx_palloc(pool, ctx->token.len);
+    if( !buf )
+        return NGX_ERROR;
+
+    while( i >= 0 )
+    {
+        enc = part[i];
+        part[i].data = buf;
+
+        if( ngx_decode_base64url(&part[i], &enc) != NGX_OK )
+            return NGX_ERROR;
+
+        buf += part[i--].len;
+    }
+
+    ctx->header    = part[0];
+    ctx->payload   = part[1];
+    ctx->signature = part[2];
 
     return NGX_OK;
 }
@@ -773,6 +773,50 @@ ngx_http_ejwt_init(ngx_conf_t *cf)
 
 
 static char *
+ngx_http_ejwt_conf_set_mode(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_str_t                          *arg;
+    ngx_http_ejwt_conf_t               *lcf;
+    ngx_conf_enum_t                    *e;
+    
+    arg = cf->args->elts;
+    lcf = conf;
+
+    lcf->mode = NGX_CONF_UNSET;
+
+    arg++;
+    e = ngx_http_ejwt_mode_set;
+    for(; e->name.len; e++ )
+        if( arg->len == e->name.len 
+            && ngx_strncasecmp(arg->data,  e->name.data, arg->len ) == 0 )
+        {
+            lcf->mode = e->value;
+            break;
+        }
+
+    if( lcf->mode == NGX_CONF_UNSET )
+        return "Invalid mode";
+    
+
+    if( cf->args->nelts < 3 )
+        return NGX_CONF_OK;
+    
+    arg++;
+    if( *arg->data == '$' )
+    {
+        arg->data++;
+        arg->len--;
+    }
+
+    lcf->vindex = ngx_http_get_variable_index(cf, arg);
+    if( lcf->vindex == NGX_ERROR )
+        return "Unknown variable name";
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
 ngx_http_ejwt_conf_set_key(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_str_t                          *values;
@@ -903,7 +947,7 @@ ngx_http_ejwt_conf_merge(ngx_conf_t *cf, void *parent, void *child)
     ngx_http_ejwt_conf_t *conf = child;
 
     ngx_conf_merge_value(conf->mode, prev->mode, NGX_HTTP_EJWT_MODE_OFF);
-    ngx_conf_merge_str_value(conf->cookie, prev->cookie, "");
+    ngx_conf_merge_value(conf->vindex, prev->vindex, NGX_CONF_UNSET);
     ngx_conf_merge_str_value(conf->claim, prev->claim, "");
     ngx_conf_merge_str_value(conf->var, prev->var, "");
     ngx_conf_merge_ptr_value(conf->auth, prev->auth
@@ -934,7 +978,7 @@ ngx_http_ejwt_conf_merge(ngx_conf_t *cf, void *parent, void *child)
         return "RSA public key is not set";
         
     return NGX_CONF_OK;
-}/*}}}*/
+}
 
 
 static void *ngx_http_ejwt_conf_create(ngx_conf_t *cf)
@@ -945,6 +989,7 @@ static void *ngx_http_ejwt_conf_create(ngx_conf_t *cf)
         return NGX_CONF_ERROR;
 
     conf->mode          = NGX_CONF_UNSET;
+    conf->vindex        = NGX_CONF_UNSET;
     conf->auth          = NGX_CONF_UNSET_PTR;
     conf->hmac_ctx      = NGX_CONF_UNSET_PTR;
     conf->hmac_ctx_old  = NGX_CONF_UNSET_PTR;
