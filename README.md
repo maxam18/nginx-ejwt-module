@@ -47,17 +47,18 @@ Different behaviour depending on configuration
             
             access_log  logs/ejwt.log  ejwt_fmt;
 
-            # this location will only check expiration and dump whole payload to the log by variable ejwt_claim
+            # this location will only parse JWT and dump whole payload to the log by variable ejwt_claim
             location /ejwt_log {
                 empty_gif;
-                easy_jwt    on;
+                easy_jwt    parse;
                 easy_jwt_claim '*';
             }
             
-            # this location will check token expiration and validate signature 
+            # this location will check token expiration (if set in the JWT) and validate signature 
+	    # the token will be extracted either from Authorization: Bearer or from Cookie with 'cauth' name
             location /ejwt_check {
                 empty_gif;
-                easy_jwt    on;
+                easy_jwt    hmac cookie_cauth;
                 # this sets 'Secret' as the key for HS256 signature validation
                 easy_jwt_key    HS256   'Secret';
             }
@@ -65,7 +66,7 @@ Different behaviour depending on configuration
             # this location will check token expiration, validate signature and authorize uri
             location /ejwt_auth {
                 empty_gif;
-                easy_jwt    on;
+                easy_jwt    hs256;
                 # this sets 'Secret' as the key for HS256 signature validation
                 easy_jwt_key    HS256   'Secret';
                 # this sets authorization procedure for the location
@@ -75,7 +76,7 @@ Different behaviour depending on configuration
             # this location will check token expiration, validate signature and authorize uri
             location /private/folders {
                 empty_gif;
-                easy_jwt    on;
+                easy_jwt    HS256;
                 # this sets 'Secret' as the key for HS256 signature validation
                 easy_jwt_key    HS256   'Secret';
                 # this sets authorization procedure for the subfolders locations
@@ -103,17 +104,24 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
 **Nginx** configuration directives below. 
 
 ## easy_jwt - module operation mode
-**Syntax**: `easy_jwt  [off|parse|hs256|rs256|hmac|pub|all`
-**Default**: `off`
+**Syntax**: `easy_jwt  mode [variable]`
+**Default**: `mode=off`
 **Context**: location
 
     Turns on module functionality.
-    parse - only parses JWT
-    hs256 - check JWT only HS256 signature if found in JWT
-    rs256 - check JWT only RS256 signature if found in JWT
-    hmac  - check JWT HMAC only signature if found in JWT (based on 'alg' from JWT header)
-    pub   - check JWT priv/pub key signature if found in JWT (based on 'alg' from JWT header)
-    all   - check JWT with any supported algorithms (based on 'alg' from JWT header)
+
+    mode is one of
+        off - module inactive (default)
+        parse - only parses JWT
+        hs256 - check JWT only HS256 signature if found in JWT
+        rs256 - check JWT only RS256 signature if found in JWT
+        hmac  - check JWT HMAC only signature if found in JWT (based on 'alg' from JWT header)
+        pub   - check JWT priv/pub key signature if found in JWT (based on 'alg' from JWT header)
+        all   - check JWT with any supported algorithms (based on 'alg' from JWT header)
+    
+    variable is a name of nginx variable to extract token from.
+
+`variable` also obsoletes `easy_jwt_cookie` directive (prior to v0.1.0). Since `variable` can be set to `$cookie_[name]`
 
 ## easy_jwt_cookie 
 **Syntax**: `easy_jwt_cookie  name`
