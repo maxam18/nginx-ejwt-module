@@ -127,6 +127,7 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
 **Syntax**: `easy_jwt_cookie  name`
 **Default**: `NULL`
 **Context**: `main`,`server`,`location`
+**Obsoleted**: since release v0.1.0
 
     Cookie name for token lookup. Easy JWT looks for `Authorization: Bearer` value first, then look for a cookie if the `name` is set.
 
