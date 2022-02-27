@@ -104,9 +104,9 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
 **Nginx** configuration directives below. 
 
 ## easy_jwt - module operation mode
-**Syntax**: `easy_jwt  mode [variable]`
-**Default**: `mode=off`
-**Context**: location
+**Syntax**: `easy_jwt  mode [variable]`  
+**Default**: `mode=off`  
+**Context**: `main`,`server`,`location`  
 
     Turns on module functionality.
 
@@ -124,34 +124,34 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
 `variable` also obsoletes `easy_jwt_cookie` directive (prior to v0.1.0). Since `variable` can be set to `$cookie_[name]`
 
 ## easy_jwt_cookie 
-**Syntax**: `easy_jwt_cookie  name`
-**Default**: `NULL`
-**Context**: `main`,`server`,`location`
+**Syntax**: `easy_jwt_cookie  name`  
+**Default**: `NULL`  
+**Context**: `main`,`server`,`location`  
 **Obsoleted**: since release v0.1.0
 
     Cookie name for token lookup. Easy JWT looks for `Authorization: Bearer` value first, then look for a cookie if the `name` is set.
 
 ## easy_jwt_realm 
-**Syntax**: `easy_jwt_realm  text`
-**Default**: `NULL`
-**Context**: `main`,`server`,`location`
+**Syntax**: `easy_jwt_realm  text`  
+**Default**: `NULL`  
+**Context**: `main`,`server`,`location`  
 
     Responds with WWW-Authenticate header field if value is set.
     Module adds realm="text" if the text of non-zero length
 
 ## easy_jwt_key 
-**Syntax**: `easy_jwt_key  ALGO KEY1 [KEY2]`
-**Default**: `NULL`
-**Context**: `main`,`server`,`location`
+**Syntax**: `easy_jwt_key  ALGO KEY1 [KEY2]`  
+**Default**: `NULL`  
+**Context**: `main`,`server`,`location`  
 
     `ALGO` is the signature algorithm. HS256, RS256 supported.
     `KEY1` first key to check signature with. Or file path to public PEM-encoded RSA key 
     `KEY2` seconds key to check signature if the check on `KEY1` fails. or file path to public PEM-encoded RSA key
 
 ## easy_jwt_auth
-**Syntax**: `easy_jwt_auth  name  value`
-**Default**: `NULL`
-**Context**: `location`
+**Syntax**: `easy_jwt_auth  name  value`  
+**Default**: `NULL`  
+**Context**: `main`,`server`,`location`  
 
     Sets authorization for a location
     The `name` payload field value compared with the configured `value`.
@@ -159,9 +159,9 @@ Module uses openssl HMAC_ for signature validation. Build nginx with openssl.
     `value` is a complex string and accepts nginx variable
 
 ## easy_jwt_claim
-**Syntax**: `easy_jwt_claim  name`
-**Default**: `NULL`
-**Context**: `main`,`server`,`location`
+**Syntax**: `easy_jwt_claim  name`  
+**Default**: `NULL`  
+**Context**: `main`,`server`,`location`  
 
     `ejwt_claim` variable initialized with the value of the `name` claim (payload) field if set
     if the `name` is `*`, full claim is set as `ejwt_claim` variable value
