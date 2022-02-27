@@ -210,7 +210,15 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
         return NGX_DECLINED;
 
     token.len = 0;
-    if( r->headers_in.authorization != NULL )
+    if( lcf->vindex != NGX_CONF_UNSET )
+    {
+        value =  ngx_http_get_indexed_variable(r, lcf->vindex);
+        if( value == NULL )
+            return NGX_ERROR;
+
+        token.data = value->data;
+        token.len  = value->len;
+    } else if( r->headers_in.authorization != NULL )
     {
         token = r->headers_in.authorization->value;
 
@@ -223,14 +231,6 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
         } else {
             token.len = 0;
         }
-    } else if( lcf->vindex != NGX_CONF_UNSET )
-    {
-        value =  ngx_http_get_indexed_variable(r, lcf->vindex);
-        if( value == NULL )
-            return NGX_ERROR;
-
-        token.data = value->data;
-        token.len  = value->len;
     } 
     
     if( token.len == 0 ) {
