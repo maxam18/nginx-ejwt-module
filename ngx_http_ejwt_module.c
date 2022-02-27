@@ -158,7 +158,7 @@ static ngx_command_t ngx_http_ejwt_commands[] = {
         offsetof(ngx_http_ejwt_conf_t, var),
         NULL },
     { ngx_string("easy_jwt_auth"),
-        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE12,
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE2,
         ngx_http_ejwt_conf_set_auth,
         NGX_HTTP_LOC_CONF_OFFSET,
         0,
@@ -916,7 +916,7 @@ ngx_http_ejwt_conf_set_auth(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_compile_complex_value_t   ccv;
     ngx_http_ejwt_conf_t              *lcf;
-    ngx_str_t                         *var = cf->args->elts;
+    ngx_str_t                         *var;
 
     var = cf->args->elts;
     lcf = conf;
