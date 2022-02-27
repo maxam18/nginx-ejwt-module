@@ -201,7 +201,7 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
     ngx_http_variable_value_t   *value;
     ngx_http_ejwt_conf_t        *lcf;
     ngx_http_ejwt_ctx_t         *ctx;
-    ngx_str_t                    token, str;
+    ngx_str_t                    token = ngx_null_string, str;
     int                          err;
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_ejwt_module);
@@ -209,7 +209,6 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
             || r->method == NGX_HTTP_OPTIONS )
         return NGX_DECLINED;
 
-    token.len = 0;
     if( r->headers_in.authorization != NULL )
     {
         token = r->headers_in.authorization->value;
@@ -223,7 +222,9 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
         } else {
             token.len = 0;
         }
-    } else if( lcf->vindex != NGX_CONF_UNSET )
+    }
+
+    if( token.len == 0 && lcf->vindex != NGX_CONF_UNSET )
     {
         value =  ngx_http_get_indexed_variable(r, lcf->vindex);
         if( value == NULL )
@@ -231,8 +232,8 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
 
         token.data = value->data;
         token.len  = value->len;
-    } 
-    
+    }
+
     if( token.len == 0 ) {
         return ngx_http_ejwt_auth_reply(r, &lcf->realm, 0);
     }
