@@ -256,17 +256,24 @@ ngx_int_t ngx_http_ejwt_handler(ngx_http_request_t *r)
         "  header:  '%.*s'\n"
         "  payload: '%.*s'\n"
         "  signlen   %zu\n"
-        "  expired   %lu\n"
         , (int)ctx->token.len, ctx->token.data
         , (int)ctx->header.len, ctx->header.data
         , (int)ctx->payload.len, ctx->payload.data
-        , ctx->signature.len, ctx->exp);
+        , ctx->signature.len);
 
     if( ngx_http_ejwt_parse_payload(lcf, ctx) != NGX_OK ) {
         ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0
                 , "Cannot parse token payload");
         return NGX_HTTP_BAD_REQUEST;
     }
+
+    dd("Payload parsed.\n"
+        "  var:     '%.*s'\n"
+        "  auth:    '%.*s'\n"
+        "  expired   %lu\n"
+        , (int)ctx->var.len, ctx->var.data
+        , (int)ctx->auth.len, ctx->auth.data
+        ,  ctx->exp);
 
     ngx_http_set_ctx(r, ctx, ngx_http_ejwt_module);
 
@@ -354,13 +361,13 @@ ngx_http_ejwt_split_token(ngx_pool_t *pool, ngx_http_ejwt_ctx_t *ctx)
         }
     part[i].len = p - part[i].data;
 
-    if( part[2].len ) {
-        ctx->token.len -= part[2].len + 1;
-    }
-
     buf = ngx_palloc(pool, ctx->token.len);
     if( !buf )
         return NGX_ERROR;
+
+    if( part[2].len ) {
+        ctx->token.len -= part[2].len + 1;
+    }
 
     while( i >= 0 )
     {
