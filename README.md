@@ -5,7 +5,7 @@ Simple lightweight JWT authorization module for nginx **[Nginx](https://nignx.or
 ## Lightweight 
 Does not use JWT and JSON libraries. Does not validate JSON integrity.
 
-Parses JWT from Authorization or Cookie.
+Takes JWT from Authorization Bearer or any nginx variable.
 
 Supports WWW-Authentication request.
 
